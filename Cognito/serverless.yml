@@ -1,0 +1,148 @@
+service: belowtheline-api
+
+
+provider:
+  name: aws
+  runtime: nodejs8.10
+  environment: ${file(env.yml):${opt:stage, self:provider.stage}}
+  region: ${self:provider.environment.REGION}
+  profile: ${self:provider.environment.PROFILE}
+
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - cloudformation:DescribeStacks
+      Resource: '*'
+    - Effect: Allow
+      Action:
+        - dynamodb:DescribeTable
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:DeleteItem
+        - dynamodb:UpdateItem
+        - dynamodb:BatchGetItem
+        - dynamodb:BatchWriteItem
+      Resource:
+        - arn:aws:dynamodb:*:*:table/${self:provider.environment.JOBS_TABLE}
+        - arn:aws:dynamodb:*:*:table/${self:provider.environment.JOBS_TABLE}/index/*
+    - Effect: Allow
+      Action:
+        - dynamodb:DescribeTable
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:DeleteItem
+        - dynamodb:UpdateItem
+        - dynamodb:BatchGetItem
+        - dynamodb:BatchWriteItem
+        - dynamodb:DescribeStream
+        - dynamodb:GetRecords
+        - dynamodb:GetShardIterator
+        - dynamodb:ListStreams
+      Resource:
+        - arn:aws:dynamodb:*:*:table/${self:provider.environment.USERS_TABLE}
+    - Effect: Allow
+      Action:
+        - s3:*
+      Resource: arn:aws:s3:::${self:provider.environment.PHOTO_BUCKET}
+    - Effect: Allow
+      Action:
+        - es:*
+      Resource:
+        - arn:aws:es:*:*:domain/${self:provider.environment.ELASTIC_SEARCH_DOMAIN}
+        - arn:aws:es:*:*:domain/${self:provider.environment.ELASTIC_SEARCH_DOMAIN}/*
+    - Effect: Allow
+      Action:
+        - ses:SendEmail
+      Resource: '*'
+
+
+resources:
+  Resources:
+    UserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: ${self:provider.environment.USER_POOL}
+        UsernameAttributes: [email]
+        AutoVerifiedAttributes:
+          - email
+        Schema:
+          - Name: email
+            AttributeDataType: String
+            Mutable: false
+            Required: true
+        Policies:
+          PasswordPolicy:
+            RequireLowercase: true
+            RequireSymbols: false
+            RequireNumbers: true
+            MinimumLength: 8
+            RequireUppercase: true
+        AdminCreateUserConfig:
+          UnusedAccountValidityDays: 60
+    UserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: ${self:provider.environment.USER_POOL_CLIENT}
+        GenerateSecret: false
+        UserPoolId:
+          Ref: UserPool
+  Outputs:
+    UserPoolId:
+      Value:
+        Ref: UserPool
+      Export:
+        Name: UserPool::Id
+    UserPoolClientId:
+      Value:
+        Ref: UserPoolClient
+      Export:
+        Name: UserPoolClient::Id
+
+
+custom:
+  dirconfig:
+    quiet: true
+  webpack:
+    webpackConfig: 'webpack.config.js'   # Name of webpack configuration file
+    includeModules: true
+#    forceExclude:
+#      - aws-sdk
+    packager: 'npm'   # Packager that will be used to package your external modules
+  output:
+    handler: api/helper/output.handler
+    file: stack.yml
+  serverless-offline-sns:
+    port: 4002 # a free port for the sns server to run on
+    debug: false
+  serverless-offline-sqs:
+    apiVersion: '2012-11-05'
+    endpoint: http://0.0.0.0:9324
+    region: us-east-1
+    accessKeyId: root
+    secretAccessKey: root
+  dynamodb:
+    start:
+      port: 8000
+      inMemory: true
+      migrate: true
+      seed: true
+      convertEmptyValues: true
+  s3:
+    host: 0.0.0.0
+    port: 8001
+    directory: /tmp
+
+
+plugins:
+  - serverless-webpack
+  - serverless-dir-config-plugin
+  - serverless-stack-output
+  - serverless-offline-sns
+  - serverless-offline-sqs
+  - serverless-dynamodb-local
+  - serverless-s3-local
+  - serverless-offline
